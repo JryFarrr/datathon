@@ -1,0 +1,7 @@
+unsloth
+PyMuPDF
+pdfplumber
+accelerate
+bitsandbytes
+torch
+transformers
