@@ -5,3 +5,6 @@ accelerate
 bitsandbytes
 torch
 transformers
+pandas==2.2.2
+yfinance==0.2.40
+prophet==1.1.5
