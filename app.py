@@ -78,50 +78,63 @@ class FinancialAnalyzer:
             self.recommended_models = ["lightweight"]
     
     def extract_text_from_pdf(self, pdf_file):
-        """Extract text from PDF file using multiple methods"""
+        """Extract text from PDF file using multiple methods - FIXED VERSION"""
         text = ""
         
         try:
+            # Check if pdf_file is None
+            if pdf_file is None:
+                return "❌ Error: No PDF file provided."
+            
+            # Handle different input types from Gradio
+            if hasattr(pdf_file, 'name'):
+                # pdf_file is a file object with .name attribute
+                pdf_path = pdf_file.name
+                print(f"📄 Processing PDF: {pdf_path}")
+            elif isinstance(pdf_file, str):
+                # pdf_file is a file path string
+                pdf_path = pdf_file
+                print(f"📄 Processing PDF: {pdf_path}")
+            else:
+                # pdf_file might be file content
+                return "❌ Error: Unsupported PDF file format."
+            
+            # Check if file exists
+            if not os.path.exists(pdf_path):
+                return "❌ Error: PDF file not found."
+            
             # Method 1: Try PyMuPDF first (better for complex layouts)
-            if pdf_file is not None:
-                # Save uploaded file to temporary location
-                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
-                    tmp_file.write(pdf_file)
-                    tmp_file_path = tmp_file.name
+            try:
+                print("🔄 Trying PyMuPDF extraction...")
+                doc = fitz.open(pdf_path)
                 
+                for page_num in range(len(doc)):
+                    page = doc.load_page(page_num)
+                    page_text = page.get_text()
+                    text += page_text
+                
+                doc.close()
+                print(f"✅ PyMuPDF extraction successful ({len(text)} characters)")
+                
+            except Exception as e:
+                print(f"❌ PyMuPDF failed: {e}")
+                
+                # Method 2: Fallback to PyPDF2
                 try:
-                    # Use PyMuPDF
-                    doc = fitz.open(tmp_file_path)
-                    for page_num in range(len(doc)):
-                        page = doc.load_page(page_num)
-                        text += page.get_text()
-                    doc.close()
-                    
-                    print(f"✅ Successfully extracted text using PyMuPDF ({len(text)} characters)")
-                    
-                except Exception as e:
-                    print(f"PyMuPDF failed: {e}")
-                    
-                    # Method 2: Fallback to PyPDF2
-                    try:
-                        with open(tmp_file_path, 'rb') as file:
-                            pdf_reader = PyPDF2.PdfReader(file)
-                            for page_num in range(len(pdf_reader.pages)):
-                                page = pdf_reader.pages[page_num]
-                                text += page.extract_text()
+                    print("🔄 Trying PyPDF2 extraction...")
+                    with open(pdf_path, 'rb') as file:
+                        pdf_reader = PyPDF2.PdfReader(file)
                         
-                        print(f"✅ Successfully extracted text using PyPDF2 ({len(text)} characters)")
-                        
-                    except Exception as e:
-                        print(f"PyPDF2 also failed: {e}")
-                        return "❌ Error: Could not extract text from PDF. Please try a different PDF file or convert to text manually."
-                
-                finally:
-                    # Clean up temporary file
-                    try:
-                        os.unlink(tmp_file_path)
-                    except:
-                        pass
+                        for page_num in range(len(pdf_reader.pages)):
+                            page = pdf_reader.pages[page_num]
+                            page_text = page.extract_text()
+                            text += page_text
+                    
+                    print(f"✅ PyPDF2 extraction successful ({len(text)} characters)")
+                    
+                except Exception as e2:
+                    print(f"❌ PyPDF2 also failed: {e2}")
+                    return f"❌ Error: Could not extract text from PDF. PyMuPDF error: {e}, PyPDF2 error: {e2}"
             
             # Clean up extracted text
             if text:
@@ -131,14 +144,16 @@ class FinancialAnalyzer:
                 text = text.strip()
                 
                 # If text is too short, it might be a scan or protected PDF
-                if len(text) < 100:
+                if len(text) < 50:
                     return "⚠️ Warning: Very little text extracted. This might be a scanned PDF or protected document. Please try an OCR tool or convert to text manually."
                 
+                print(f"✅ Text cleaning completed. Final length: {len(text)} characters")
                 return text
             else:
                 return "❌ Error: No text could be extracted from the PDF."
                 
         except Exception as e:
+            print(f"❌ General PDF processing error: {e}")
             return f"❌ Error processing PDF: {str(e)}"
     
     def load_phi4_model(self, model_config):
@@ -480,19 +495,25 @@ print("🚀 Initializing Financial Analyzer...")
 analyzer = FinancialAnalyzer()
 
 def process_financial_report(pdf_file, text_input, user_question=""):
-    """Main function to process financial report from PDF or text"""
+    """Main function to process financial report from PDF or text - IMPROVED ERROR HANDLING"""
     
     financial_text = ""
     
     # Process PDF if uploaded
     if pdf_file is not None:
         print("📄 Processing PDF file...")
-        financial_text = analyzer.extract_text_from_pdf(pdf_file)
+        try:
+            financial_text = analyzer.extract_text_from_pdf(pdf_file)
+            print(f"📄 PDF processing result: {len(financial_text) if not financial_text.startswith('❌') else 'ERROR'}")
+        except Exception as e:
+            financial_text = f"❌ Error processing PDF: {str(e)}"
+            print(f"❌ PDF processing exception: {e}")
     
     # Use text input if no PDF or as fallback
     if not financial_text or financial_text.startswith("❌") or financial_text.startswith("⚠️"):
         if text_input.strip():
             financial_text = text_input
+            print("📝 Using text input instead of PDF")
         else:
             if not financial_text:
                 return "Please provide either a PDF file or text input.", ""
@@ -500,12 +521,20 @@ def process_financial_report(pdf_file, text_input, user_question=""):
             return financial_text, ""
     
     # Always perform main analysis
-    main_analysis = analyzer.analyze_financial_report(financial_text)
+    try:
+        main_analysis = analyzer.analyze_financial_report(financial_text)
+    except Exception as e:
+        main_analysis = f"❌ Error during analysis: {str(e)}"
+        print(f"❌ Analysis error: {e}")
     
     # Answer specific question if provided
     additional_response = ""
     if user_question.strip():
-        additional_response = analyzer.answer_question(financial_text, user_question)
+        try:
+            additional_response = analyzer.answer_question(financial_text, user_question)
+        except Exception as e:
+            additional_response = f"❌ Error answering question: {str(e)}"
+            print(f"❌ Question answering error: {e}")
     
     return main_analysis, additional_response
 
@@ -592,10 +621,13 @@ with gr.Blocks(title="Financial Report Analyzer", theme=gr.themes.Soft()) as dem
         outputs=[main_output, additional_output]
     )
     
-    # Show extracted text when PDF is uploaded
+    # Show extracted text when PDF is uploaded - IMPROVED
     def show_extracted_text(pdf_file):
         if pdf_file is not None:
-            return analyzer.extract_text_from_pdf(pdf_file)
+            try:
+                return analyzer.extract_text_from_pdf(pdf_file)
+            except Exception as e:
+                return f"❌ Error extracting text: {str(e)}"
         return ""
     
     pdf_input.change(
